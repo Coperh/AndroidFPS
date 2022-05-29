@@ -1,7 +1,16 @@
+using System.Collections;
+using TMPro;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM && STARTER_ASSETS_PACKAGES_CHECKED
 using UnityEngine.InputSystem;
 #endif
+
+
+
+
+
+
+
 
 namespace StarterAssets
 {
@@ -51,6 +60,13 @@ namespace StarterAssets
 		[Tooltip("How far in degrees can you move the camera down")]
 		public float BottomClamp = -90.0f;
 
+
+
+
+
+
+
+
 		// cinemachine
 		private float _cinemachineTargetPitch;
 
@@ -58,7 +74,7 @@ namespace StarterAssets
 		private float _speed;
 		private float _rotationVelocity;
 		private float _verticalVelocity;
-		private float _terminalVelocity = 53.0f;
+		//private float _terminalVelocity = 53.0f;
 
 		// timeout deltatime
 		private float _jumpTimeoutDelta;
@@ -73,6 +89,45 @@ namespace StarterAssets
 		
 		private bool IsCurrentDeviceMouse => _playerInput.currentControlScheme == "KeyboardMouse";
 
+
+	
+		private float base_x;
+		private float base_y;
+
+		private Quaternion base_rot;
+
+
+
+		UnityEngine.Gyroscope gyro;
+
+		private bool gyro_enabled = true;
+
+
+
+
+		public TMP_Text text;
+
+
+
+
+
+		IEnumerator InitializeGyro()
+		{
+			gyro.enabled = false;
+			yield return new WaitForSeconds(4);
+			gyro.enabled = true;
+			yield return new WaitForSeconds(4);
+
+			Debug.Log(Input.gyro.attitude); // attitude has data now
+		}
+
+
+
+
+
+
+
+
 		private void Awake()
 		{
 			// get a reference to our main camera
@@ -80,23 +135,69 @@ namespace StarterAssets
 			{
 				_mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
 			}
+			
+			gyro = Input.gyro;
+
 		}
 
-		private void Start()
+		void  Start()
 		{
+
+
+			Debug.Log("Has Gyro " + SystemInfo.supportsGyroscope);
+
+
 			_controller = GetComponent<CharacterController>();
 			_input = GetComponent<StarterAssetsInputs>();
 			_playerInput = GetComponent<PlayerInput>();
 
+
+			base_rot = transform.rotation;
+
+
+
+			if (gyro_enabled)
+			{
+
+
+				StartCoroutine(InitializeGyro());
+
+
+
+
+
+				text.text = Input.gyro.enabled.ToString();
+
+				Debug.Log(Input.gyro.attitude); // attitude has data now
+
+
+
+				Quaternion q = gyro.attitude;
+
+				base_x = q.eulerAngles.x;
+				base_y = 90;
+
+			}
+
+			
+
 			// reset our timeouts on start
 			_jumpTimeoutDelta = JumpTimeout;
 			_fallTimeoutDelta = FallTimeout;
+
+
+
+
+			Debug.Log(Input.gyro.enabled);
 		}
+
+
 
 		private void Update()
 		{
-			JumpAndGravity();
+			Fire();
 			GroundedCheck();
+			ResetGyro();
 			Move();
 		}
 
@@ -112,27 +213,114 @@ namespace StarterAssets
 			Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers, QueryTriggerInteraction.Ignore);
 		}
 
+
+
+
+
 		private void CameraRotation()
 		{
 			// if there is an input
 			if (_input.look.sqrMagnitude >= _threshold)
 			{
-				//Don't multiply mouse input by Time.deltaTime
 				float deltaTimeMultiplier = IsCurrentDeviceMouse ? 1.0f : Time.deltaTime;
-				
 				_cinemachineTargetPitch += _input.look.y * RotationSpeed * deltaTimeMultiplier;
 				_rotationVelocity = _input.look.x * RotationSpeed * deltaTimeMultiplier;
-
-				// clamp our pitch rotation
 				_cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, BottomClamp, TopClamp);
+				base_rot = base_rot * Quaternion.Euler(0.0f, 1.0f * _rotationVelocity, 0.0f);
+			}
 
-				// Update Cinemachine camera target pitch
+			if (gyro.enabled)
+			{
+				//Quater
+				Quaternion q = gyro.attitude;
+
+				Debug.Log(q);
+
+				float change_y = q.eulerAngles.y - base_y;
+
+				if (change_y > 180) change_y -= 360;
+
+				float change_x = q.eulerAngles.x - base_x;  //= q.eulerAngles.x - base_gyro.eulerAngles.x;
+				transform.rotation = base_rot * Quaternion.Euler(0.0f, change_x, 0.0f);
+
+				CinemachineCameraTarget.transform.localRotation = //Quaternion.Euler(_cinemachineTargetPitch, 0.0f, 0.0f);
+					Quaternion.Euler(ClampAngle(_cinemachineTargetPitch - change_y, BottomClamp, TopClamp * 2.0f), 0.0f, 0.0f);
+			}
+
+			else {
+				transform.rotation = base_rot;
 				CinemachineCameraTarget.transform.localRotation = Quaternion.Euler(_cinemachineTargetPitch, 0.0f, 0.0f);
-
-				// rotate the player left and right
-				transform.Rotate(Vector3.up * _rotationVelocity);
 			}
 		}
+
+
+		private void Fire()
+		{
+
+			if (_input.jump)
+			{
+
+				RaycastHit hit;
+
+				Ray ray = Camera.main.ScreenPointToRay(new Vector2(Screen.width / 2, Screen.height / 2));
+
+				if (Physics.Raycast(ray, out hit))
+				{
+					Debug.Log("I hit " + hit.collider.name);
+
+					if (hit.transform.tag == "Target")
+					{
+						hit.transform.GetComponent<Renderer>().material.color = Color.red;
+					}
+				}
+			}
+		}
+
+
+
+		private void ResetGyro() {
+
+			if (_input.sprint)
+            {
+	
+
+				Quaternion q = Input.gyro.attitude;
+
+				text.text = SystemInfo.supportsGyroscope + " Boop " + Input.gyro.enabled.ToString();
+
+
+				float change_x = q.eulerAngles.x - base_x;  //= q.eulerAngles.x - base_gyro.eulerAngles.x;
+				base_rot *= Quaternion.Euler(0.0f, change_x, 0.0f);
+
+
+				base_x = q.eulerAngles.x;
+
+				float change_y = q.eulerAngles.y - base_y;
+
+				if (change_y > 180) change_y -= 360;
+
+
+				float current_angle = ClampAngle(_cinemachineTargetPitch - change_y, BottomClamp, TopClamp * 2.0f);
+
+
+				if (current_angle > TopClamp)
+				{
+					base_y = q.eulerAngles.y - (current_angle - TopClamp);
+					_cinemachineTargetPitch = TopClamp;
+				}
+				else if (current_angle < BottomClamp)
+				{
+					base_y = q.eulerAngles.y + (current_angle - BottomClamp) ;
+					_cinemachineTargetPitch = BottomClamp;
+				}
+				else {
+					base_y = q.eulerAngles.y;
+					_cinemachineTargetPitch = current_angle;
+				}
+
+			}
+		}
+
 
 		private void Move()
 		{
@@ -181,53 +369,7 @@ namespace StarterAssets
 			_controller.Move(inputDirection.normalized * (_speed * Time.deltaTime) + new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
 		}
 
-		private void JumpAndGravity()
-		{
-			if (Grounded)
-			{
-				// reset the fall timeout timer
-				_fallTimeoutDelta = FallTimeout;
-
-				// stop our velocity dropping infinitely when grounded
-				if (_verticalVelocity < 0.0f)
-				{
-					_verticalVelocity = -2f;
-				}
-
-				// Jump
-				if (_input.jump && _jumpTimeoutDelta <= 0.0f)
-				{
-					// the square root of H * -2 * G = how much velocity needed to reach desired height
-					_verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
-				}
-
-				// jump timeout
-				if (_jumpTimeoutDelta >= 0.0f)
-				{
-					_jumpTimeoutDelta -= Time.deltaTime;
-				}
-			}
-			else
-			{
-				// reset the jump timeout timer
-				_jumpTimeoutDelta = JumpTimeout;
-
-				// fall timeout
-				if (_fallTimeoutDelta >= 0.0f)
-				{
-					_fallTimeoutDelta -= Time.deltaTime;
-				}
-
-				// if we are not grounded, do not jump
-				_input.jump = false;
-			}
-
-			// apply gravity over time if under terminal (multiply by delta time twice to linearly speed up over time)
-			if (_verticalVelocity < _terminalVelocity)
-			{
-				_verticalVelocity += Gravity * Time.deltaTime;
-			}
-		}
+		
 
 		private static float ClampAngle(float lfAngle, float lfMin, float lfMax)
 		{
@@ -235,6 +377,7 @@ namespace StarterAssets
 			if (lfAngle > 360f) lfAngle -= 360f;
 			return Mathf.Clamp(lfAngle, lfMin, lfMax);
 		}
+
 
 		private void OnDrawGizmosSelected()
 		{
